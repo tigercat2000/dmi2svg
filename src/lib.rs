@@ -30,11 +30,11 @@ pub enum Error {
 pub fn dmi2svg(file: &std::path::Path) -> Result<Vec<SVGState>, Error> {
     let dmi = dmi::icon::Icon::load(std::fs::File::open(file)?)?;
 
-    let mut state_vec: Vec<(String, DynamicImage)> = Vec::with_capacity(dmi.states.len());
+    let mut state_vec: Vec<(String, &DynamicImage)> = Vec::with_capacity(dmi.states.len());
 
     for state in &dmi.states {
         let first_image = state.images.get(0).ok_or(Error::NoFirstStateImage)?;
-        state_vec.push((state.name.clone(), first_image.clone()));
+        state_vec.push((state.name.clone(), first_image));
     }
 
     // Most of this is straight from [`raster2svg`](https://github.com/STPR/raster2svg)

@@ -12,3 +12,7 @@ dmi = "0.3.0"
 image = { version = "0.24.6", default-features = false }
 thiserror = "1.0.44"
 rayon = "1.7.0"
+
+[profile.release] 
+debug = true
+lto = true
