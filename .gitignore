@@ -1,0 +1,4 @@
+/target
+/Cargo.lock
+/test_dmis/real_dmis/*
+/test_dmis/real_dmis/**/*
