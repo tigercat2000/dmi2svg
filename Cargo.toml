@@ -7,7 +7,8 @@ edition = "2021"
 
 [dependencies]
 contour_tracing = {version = "1.0.12", features = ["array"] }
-image = "0.24.6"
-dmm-tools = { git = "https://github.com/SpaceManiac/SpacemanDMM/", features = ["png", "gif"] }
-dreammaker = { git = "https://github.com/SpaceManiac/SpacemanDMM/" }
 base64 = "0.21.2"
+dmi = "0.3.0"
+image = { version = "0.24.6", default-features = false }
+thiserror = "1.0.44"
+rayon = "1.7.0"

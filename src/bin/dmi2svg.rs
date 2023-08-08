@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Instant};
 
 use dmi2svg::dmi2svg;
 
@@ -18,6 +18,8 @@ fn main() {
         return;
     }
 
+    let start = Instant::now();
+
     let svgs = dmi2svg(path).expect("Failed to create SVGs");
 
     for state in svgs {
@@ -26,4 +28,8 @@ fn main() {
         std::fs::write(&path, state.svg).unwrap_or_else(|_| panic!("Failed to write {:?}", path));
         println!("Wrote state {:?} to {:?}", state.name, path);
     }
+
+    let duration = start.elapsed();
+
+    println!("Finished in {}ms", duration.as_millis());
 }
