@@ -1,0 +1,13 @@
+[package]
+name = "dmi2svg"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+contour_tracing = {version = "1.0.12", features = ["array"] }
+image = "0.24.6"
+dmm-tools = { git = "https://github.com/SpaceManiac/SpacemanDMM/", features = ["png", "gif"] }
+dreammaker = { git = "https://github.com/SpaceManiac/SpacemanDMM/" }
+base64 = "0.21.2"
