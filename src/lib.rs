@@ -86,7 +86,7 @@ fn generate_paths(image: &DynamicImage) -> Vec<String> {
         .collect()
 }
 
-pub fn dmi2svg_symbol(file: &std::path::Path) -> Result<String, Error> {
+pub fn dmi2svg_symbol(file: &std::path::Path) -> Result<Vec<String>, Error> {
     let dmi = dmi::icon::Icon::load(std::fs::File::open(file)?)?;
 
     let mut state_vec: Vec<(String, &DynamicImage)> = Vec::with_capacity(dmi.states.len());
@@ -121,21 +121,7 @@ pub fn dmi2svg_symbol(file: &std::path::Path) -> Result<String, Error> {
         })
         .collect();
 
-    let mut svg = String::new();
-
-    let mut header: String = r#"<svg xmlns="http://www.w3.org/2000/svg""#.to_string();
-    header += &format!(
-        r#" width="auto" height="auto" viewBox="0 0 {} {}""#,
-        dmi.width, dmi.height
-    );
-    header += r#" shape-rendering="crispEdges""#;
-    header += ">\n";
-
-    write!(svg, "{}", header).unwrap();
-    svg.push_str(&svg_symbols.join("\n"));
-    writeln!(svg, "</svg>").unwrap();
-
-    Ok(svg)
+    Ok(svg_symbols)
 }
 
 pub fn dmi2svg(file: &std::path::Path) -> Result<Vec<SVGState>, Error> {
