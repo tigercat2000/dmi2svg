@@ -2,7 +2,7 @@ mod opacity_map;
 use image::{DynamicImage, GenericImageView};
 use opacity_map::OPACITY;
 use rayon::prelude::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
 
 use contour_tracing::array::bits_to_paths;
@@ -108,6 +108,53 @@ pub fn dmi2svg_symbol(file: &std::path::Path) -> Result<Vec<String>, Error> {
             header += &format!(
                 r#"id="{}" width="{}" height="{}" viewBox="0 0 {} {}""#,
                 name, elem_width, elem_height, width, height
+            );
+            header += ">\n";
+
+            write!(symbol, "{}", header).unwrap();
+
+            let paths = generate_paths(image);
+            symbol.push_str(&paths.concat());
+            writeln!(symbol, "</symbol>").unwrap();
+
+            symbol
+        })
+        .collect();
+
+    Ok(svg_symbols)
+}
+
+pub fn dmi2svg_symbol_map(
+    file: &std::path::Path,
+    map: &HashMap<String, String>,
+) -> Result<Vec<String>, Error> {
+    let dmi = dmi::icon::Icon::load(std::fs::File::open(file)?)?;
+
+    let mut state_vec: Vec<(String, &DynamicImage)> = Vec::with_capacity(dmi.states.len());
+
+    for state in &dmi.states {
+        let first_image = state.images.get(0).ok_or(Error::NoFirstStateImage)?;
+        state_vec.push((state.name.clone(), first_image));
+    }
+
+    let svg_symbols: Vec<String> = state_vec
+        .par_iter()
+        .map(|(name, image)| {
+            let (width, height) = (image.width(), image.height());
+            let (elem_width, elem_height) = ("auto", "auto");
+
+            let mut symbol = String::new();
+
+            let id = if let Some(rename) = map.get(name) {
+                rename
+            } else {
+                name
+            };
+
+            let mut header: String = r#"<symbol "#.to_string();
+            header += &format!(
+                r#"id="{}" width="{}" height="{}" viewBox="0 0 {} {}""#,
+                id, elem_width, elem_height, width, height
             );
             header += ">\n";
 
