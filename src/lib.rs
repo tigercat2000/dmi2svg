@@ -27,6 +27,117 @@ pub enum Error {
     NoFirstStateImage,
 }
 
+/// Most of this is straight from [`raster2svg`](https://github.com/STPR/raster2svg)
+///
+/// See https://github.com/STPR/raster2svg/blob/main/src/main.rs
+fn generate_paths(image: &DynamicImage) -> Vec<String> {
+    let (width, height) = (image.width(), image.height());
+
+    // First phase: Color sort
+    let mut colors: BTreeMap<[u8; 4], usize> = BTreeMap::new();
+    for (_x, _y, pixel) in image.pixels() {
+        // Check alpha
+        if pixel.0[3] != 0 {
+            *colors.entry(pixel.0).or_insert(0) += 1;
+        }
+    }
+
+    let mut sorted_colors = Vec::from_iter(colors);
+    sorted_colors.sort_by(|&(_, a), &(_, b)| a.cmp(&b).reverse());
+
+    sorted_colors
+        .into_par_iter()
+        .map(|color| {
+            let [red, green, blue, alpha] = color.0;
+            let alpha = alpha as usize;
+
+            let mut path_string = String::new();
+
+            // Third phase: Create paths
+            if alpha == 255 {
+                write!(path_string, "<path ").unwrap();
+                write!(path_string, r#"fill="rgb({},{},{})" d=""#, red, green, blue).unwrap();
+            } else {
+                write!(path_string, "<path ").unwrap();
+                write!(
+                    path_string,
+                    r#"fill="rgb({},{},{})" opacity="{}" d=""#,
+                    red, green, blue, OPACITY[alpha]
+                )
+                .unwrap();
+            }
+
+            // Fourth phase: fill an array of bits for one color
+            // rows/columns
+            let mut bits = vec![vec![0i8; width as usize]; height as usize];
+
+            for (x, y, pixel) in image.pixels() {
+                if pixel.0 == color.0 {
+                    bits[y as usize][x as usize] = 1;
+                }
+            }
+
+            // Fifth phase: Use contour_tracing
+            write!(path_string, "{}", bits_to_paths(bits, true)).unwrap();
+            writeln!(path_string, r#""/>"#).unwrap();
+
+            path_string
+        })
+        .collect()
+}
+
+pub fn dmi2svg_symbol(file: &std::path::Path) -> Result<String, Error> {
+    let dmi = dmi::icon::Icon::load(std::fs::File::open(file)?)?;
+
+    let mut state_vec: Vec<(String, &DynamicImage)> = Vec::with_capacity(dmi.states.len());
+
+    for state in &dmi.states {
+        let first_image = state.images.get(0).ok_or(Error::NoFirstStateImage)?;
+        state_vec.push((state.name.clone(), first_image));
+    }
+
+    let svg_symbols: Vec<String> = state_vec
+        .par_iter()
+        .map(|(name, image)| {
+            let (width, height) = (image.width(), image.height());
+            let (elem_width, elem_height) = ("auto", "auto");
+
+            let mut symbol = String::new();
+
+            let mut header: String = r#"<symbol "#.to_string();
+            header += &format!(
+                r#"id="{}" width="{}" height="{}" viewBox="0 0 {} {}""#,
+                name, elem_width, elem_height, width, height
+            );
+            header += ">\n";
+
+            write!(symbol, "{}", header).unwrap();
+
+            let paths = generate_paths(image);
+            symbol.push_str(&paths.concat());
+            writeln!(symbol, "</symbol>").unwrap();
+
+            symbol
+        })
+        .collect();
+
+    let mut svg = String::new();
+
+    let mut header: String = r#"<svg xmlns="http://www.w3.org/2000/svg""#.to_string();
+    header += &format!(
+        r#" width="auto" height="auto" viewBox="0 0 {} {}""#,
+        dmi.width, dmi.height
+    );
+    header += r#" shape-rendering="crispEdges""#;
+    header += ">\n";
+
+    write!(svg, "{}", header).unwrap();
+    svg.push_str(&svg_symbols.join("\n"));
+    writeln!(svg, "</svg>").unwrap();
+
+    Ok(svg)
+}
+
 pub fn dmi2svg(file: &std::path::Path) -> Result<Vec<SVGState>, Error> {
     let dmi = dmi::icon::Icon::load(std::fs::File::open(file)?)?;
 
@@ -37,26 +148,11 @@ pub fn dmi2svg(file: &std::path::Path) -> Result<Vec<SVGState>, Error> {
         state_vec.push((state.name.clone(), first_image));
     }
 
-    // Most of this is straight from [`raster2svg`](https://github.com/STPR/raster2svg)
-    //
-    // See https://github.com/STPR/raster2svg/blob/main/src/main.rs
     let svg_states: Vec<SVGState> = state_vec
         .par_iter()
         .map(|(name, image)| {
             let (width, height) = (image.width(), image.height());
             let (elem_width, elem_height) = ("auto", "auto");
-
-            // First phase: Color sort
-            let mut colors: BTreeMap<[u8; 4], usize> = BTreeMap::new();
-            for (_x, _y, pixel) in image.pixels() {
-                // Check alpha
-                if pixel.0[3] != 0 {
-                    *colors.entry(pixel.0).or_insert(0) += 1;
-                }
-            }
-
-            let mut sorted_colors = Vec::from_iter(colors);
-            sorted_colors.sort_by(|&(_, a), &(_, b)| a.cmp(&b).reverse());
 
             // Second phase: svg headers
             let mut svg = String::new();
@@ -71,46 +167,7 @@ pub fn dmi2svg(file: &std::path::Path) -> Result<Vec<SVGState>, Error> {
 
             write!(svg, "{}", header).unwrap();
 
-            let paths: Vec<_> = sorted_colors
-                .into_par_iter()
-                .map(|color| {
-                    let [red, green, blue, alpha] = color.0;
-                    let alpha = alpha as usize;
-
-                    let mut path_string = String::new();
-
-                    // Third phase: Create paths
-                    if alpha == 255 {
-                        write!(path_string, "<path ").unwrap();
-                        write!(path_string, r#"fill="rgb({},{},{})" d=""#, red, green, blue)
-                            .unwrap();
-                    } else {
-                        write!(path_string, "<path ").unwrap();
-                        write!(
-                            path_string,
-                            r#"fill="rgb({},{},{})" opacity="{}" d=""#,
-                            red, green, blue, OPACITY[alpha]
-                        )
-                        .unwrap();
-                    }
-
-                    // Fourth phase: fill an array of bits for one color
-                    // rows/columns
-                    let mut bits = vec![vec![0i8; width as usize]; height as usize];
-
-                    for (x, y, pixel) in image.pixels() {
-                        if pixel.0 == color.0 {
-                            bits[y as usize][x as usize] = 1;
-                        }
-                    }
-
-                    // Fifth phase: Use contour_tracing
-                    write!(path_string, "{}", bits_to_paths(bits, true)).unwrap();
-                    writeln!(path_string, r#""/>"#).unwrap();
-
-                    path_string
-                })
-                .collect();
+            let paths = generate_paths(image);
 
             svg.push_str(&paths.concat());
 
@@ -122,71 +179,6 @@ pub fn dmi2svg(file: &std::path::Path) -> Result<Vec<SVGState>, Error> {
             }
         })
         .collect();
-
-    // for (name, image) in state_vec {
-    //     let (width, height) = (image.width(), image.height());
-    //     let (elem_width, elem_height) = ("auto", "auto");
-
-    //     // First phase: Color sort
-    //     let mut colors: BTreeMap<[u8; 4], usize> = BTreeMap::new();
-    //     for (_x, _y, pixel) in image.pixels() {
-    //         // Check alpha
-    //         if pixel.0[3] != 0 {
-    //             *colors.entry(pixel.0).or_insert(0) += 1;
-    //         }
-    //     }
-
-    //     let mut sorted_colors = Vec::from_iter(colors);
-    //     sorted_colors.sort_by(|&(_, a), &(_, b)| a.cmp(&b).reverse());
-
-    //     // Second phase: svg headers
-    //     let mut svg = String::new();
-
-    //     let mut header: String = r#"<svg xmlns="http://www.w3.org/2000/svg""#.to_string();
-    //     header += &format!(
-    //         r#" width="{}" height="{}" viewBox="0 0 {} {}""#,
-    //         elem_width, elem_height, width, height
-    //     );
-    //     header += r#" shape-rendering="crispEdges""#;
-    //     header += ">\n";
-
-    //     write!(svg, "{}", header)?;
-
-    //     for color in sorted_colors.into_iter() {
-    //         let [red, green, blue, alpha] = color.0;
-    //         let alpha = alpha as usize;
-
-    //         // Third phase: Create paths
-    //         if alpha == 255 {
-    //             write!(svg, "<path ")?;
-    //             write!(svg, r#"fill="rgb({},{},{})" d=""#, red, green, blue)?;
-    //         } else {
-    //             write!(svg, "<path ")?;
-    //             write!(
-    //                 svg,
-    //                 r#"fill="rgb({},{},{})" opacity="{}" d=""#,
-    //                 red, green, blue, OPACITY[alpha]
-    //             )?;
-    //         }
-
-    //         // Fourth phase: fill an array of bits for one color
-    //         // rows/columns
-    //         let mut bits = vec![vec![0i8; width as usize]; height as usize];
-
-    //         for (x, y, pixel) in image.pixels() {
-    //             if pixel.0 == color.0 {
-    //                 bits[y as usize][x as usize] = 1;
-    //             }
-    //         }
-
-    //         // Fifth phase: Use contour_tracing
-    //         write!(svg, "{}", bits_to_paths(bits, true))?;
-    //         writeln!(svg, r#""/>"#)?;
-    //     }
-    //     writeln!(svg, "</svg>")?;
-
-    //     svg_states.push(SVGState { name, svg })
-    // }
 
     Ok(svg_states)
 }
